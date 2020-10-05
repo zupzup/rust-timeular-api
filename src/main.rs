@@ -19,13 +19,18 @@ async fn main() -> Result<(), Error> {
 
     println!("signing in..");
     let token = sign_in(api_key, api_secret).await?;
-    // TODO: get /me
-    // TODO: get my spaces
+
+    println!("fetching me and spaces...");
+    let me = fetch_me(&token).await?;
+    let spaces = fetch_spaces(&token).await?;
+
     println!("fetching activities...");
     let activities = fetch_activities(&token).await?;
-    // TODO: create time entry
-    // TODO: start tracking, cancel tracking
-    // TODO: create and write excel report to disk
+    if !activities.is_empty() {
+        let tracking = start_tracking(&activities.get(0).expect("exists").id, &token).await?;
+        // TODO: stop tracking
+    }
+    // TODO: create report and write file
 
     println!("activities: {:?}", activities);
 
@@ -47,6 +52,28 @@ async fn sign_in(api_key: String, api_secret: String) -> Result<String, Error> {
     Ok(resp.token)
 }
 
+async fn fetch_me(token: &str) -> Result<Me, Error> {
+    let resp = CLIENT
+        .get(&url("/me"))
+        .header("Authorization", auth(token))
+        .send()
+        .await?
+        .json::<MeResponse>()
+        .await?;
+    Ok(resp.data)
+}
+
+async fn fetch_spaces(token: &str) -> Result<Vec<Space>, Error> {
+    let resp = CLIENT
+        .get(&url("/space"))
+        .header("Authorization", auth(token))
+        .send()
+        .await?
+        .json::<SpacesResponse>()
+        .await?;
+    Ok(resp.data)
+}
+
 async fn fetch_activities(token: &str) -> Result<Vec<Activity>, Error> {
     let resp = CLIENT
         .get(&url("/activities"))
@@ -56,6 +83,20 @@ async fn fetch_activities(token: &str) -> Result<Vec<Activity>, Error> {
         .json::<ActivitiesResponse>()
         .await?;
     Ok(resp.activities)
+}
+
+async fn start_tracking(activity_id: &str, token: &str) -> Result<Tracking, Error> {
+    let body = TrackingRequest {
+        started_at: "2020-08-03T04:00:00.000".to_string(),
+    };
+    let resp = CLIENT
+        .post(&url(&format!("tracking/{}/start", activity_id)))
+        .json(&body)
+        .send()
+        .await?
+        .json::<TrackingResponse>()
+        .await?;
+    Ok(resp.current_tracking)
 }
 
 fn url(path: &str) -> String {
@@ -79,6 +120,51 @@ struct SignInResponse {
 }
 
 #[derive(Deserialize, Debug)]
+struct MeResponse {
+    data: Me,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct Me {
+    user_id: String,
+    name: String,
+    email: String,
+    default_space_id: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct SpacesResponse {
+    data: Vec<Space>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct Space {
+    id: String,
+    name: String,
+    default: bool,
+    members: Vec<Member>,
+    retired_members: Vec<RetiredMember>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct Member {
+    id: String,
+    name: String,
+    email: String,
+    role: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct RetiredMember {
+    id: String,
+    name: String,
+}
+
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct ActivitiesResponse {
     activities: Vec<Activity>,
@@ -95,4 +181,43 @@ struct Activity {
     integration: String,
     space_id: String,
     device_side: Option<i64>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct TrackingRequest {
+    started_at: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct TrackingResponse {
+    current_tracking: Tracking,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct Tracking {
+    id: String,
+    activity_id: String,
+    started_at: String,
+    note: Note,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct Note {
+    text: Option<String>,
+    tags: Vec<TagOrMention>,
+    mentions: Vec<TagOrMention>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct TagOrMention {
+    id: i64,
+    key: String,
+    label: String,
+    scope: String,
+    space_id: String,
 }
