@@ -1,5 +1,4 @@
-#[macro_use]
-extern crate lazy_static;
+use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -7,9 +6,7 @@ use tokio::fs;
 
 type Error = Box<dyn std::error::Error>;
 
-lazy_static! {
-    static ref CLIENT: Client = Client::new();
-}
+static CLIENT: Lazy<Client> = Lazy::new(|| Client::new());
 
 const BASE_URL: &str = "https://api.timeular.com/api/v3";
 const REPORT_FILE: &str = "./report.csv";
@@ -72,6 +69,7 @@ async fn sign_in(api_key: String, api_secret: String) -> Result<String, Error> {
         .await?;
     Ok(resp.token)
 }
+
 #[derive(Deserialize, Debug)]
 struct MeResponse {
     data: Me,
